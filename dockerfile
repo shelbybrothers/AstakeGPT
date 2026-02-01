@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     default-libmysqlclient-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 18 (good for Next.js)
+# Install Node.js 18
 RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
     && apt-get update && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
@@ -20,6 +20,18 @@ COPY . .
 
 # ---- Build NextJS ----
 WORKDIR /app/next
+
+# Provide BUILD-TIME placeholders (only to satisfy env validation during build)
+# These do NOT replace runtime env vars on Render.
+ARG DATABASE_URL="postgresql://user:pass@localhost:5432/db?schema=public"
+ARG NEXTAUTH_SECRET="build-time-placeholder-secret"
+ARG NEXTAUTH_URL="http://localhost:3000"
+
+ENV DATABASE_URL=$DATABASE_URL \
+    NEXTAUTH_SECRET=$NEXTAUTH_SECRET \
+    NEXTAUTH_URL=$NEXTAUTH_URL \
+    NODE_ENV=production
+
 RUN npm ci
 RUN npm run build
 
