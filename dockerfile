@@ -1,28 +1,46 @@
-FROM node:18-bullseye AS build
+# =========================
+# Build stage
+# =========================
+FROM python:3.11-slim AS build
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y python3 python3-pip python3-venv && rm -rf /var/lib/apt/lists/*
+# Install OS deps + Node 18
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates git build-essential \
+  && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+  && apt-get install -y --no-install-recommends nodejs \
+  && rm -rf /var/lib/apt/lists/*
 
+# Copy repo
 COPY . .
 
-# Build frontend
+# ---------- Frontend deps (no build here) ----------
 WORKDIR /app/next
 RUN npm ci
 
-# Install backend deps
+# ---------- Backend deps ----------
 WORKDIR /app/platform
-RUN python3 -m venv /opt/venv
+RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --upgrade pip
 RUN if [ -f requirements.txt ]; then pip install -r requirements.txt; \
     elif [ -f pyproject.toml ]; then pip install .; \
     else echo "No requirements.txt or pyproject.toml in /platform" && exit 1; fi
 
-FROM node:18-bullseye
+# =========================
+# Runtime stage
+# =========================
+FROM python:3.11-slim
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y python3 supervisor && rm -rf /var/lib/apt/lists/*
+# Install Node 18 + supervisor
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates supervisor \
+  && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+  && apt-get install -y --no-install-recommends nodejs \
+  && rm -rf /var/lib/apt/lists/*
 
+# Copy app + venv
 COPY --from=build /app /app
 COPY --from=build /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
