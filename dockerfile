@@ -20,21 +20,22 @@ COPY . .
 # ---- Build NextJS ----
 WORKDIR /app/next
 
-# Disable Husky/git hooks during Docker build
-ENV CI=true \
-    HUSKY=0
-
-# Provide BUILD-TIME placeholders so env validation passes
+# Build-time placeholders so env validation passes during next build
 ARG DATABASE_URL="postgresql://user:pass@localhost:5432/db?schema=public"
 ARG NEXTAUTH_SECRET="build-time-placeholder-secret"
 ARG NEXTAUTH_URL="http://localhost:3000"
 
-ENV DATABASE_URL=$DATABASE_URL \
+ENV NODE_ENV=production \
+    CI=true \
+    DATABASE_URL=$DATABASE_URL \
     NEXTAUTH_SECRET=$NEXTAUTH_SECRET \
-    NEXTAUTH_URL=$NEXTAUTH_URL \
-    NODE_ENV=production
+    NEXTAUTH_URL=$NEXTAUTH_URL
 
-RUN npm ci
+# IMPORTANT:
+# - ignore-scripts prevents Husky prepare hook from running
+# - then we run prisma generate manually
+RUN npm ci --ignore-scripts
+RUN npx prisma generate
 RUN npm run build
 
 # ---- Build Python backend venv ----
@@ -42,6 +43,7 @@ WORKDIR /app/platform
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --upgrade pip
+
 RUN if [ -f requirements.txt ]; then pip install -r requirements.txt; \
     elif [ -f pyproject.toml ]; then pip install .; \
     else echo "No requirements.txt or pyproject.toml in /platform" && exit 1; fi
