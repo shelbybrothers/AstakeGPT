@@ -1,57 +1,56 @@
 # =========================
-# Build stage
+# BUILD STAGE
 # =========================
 FROM python:3.11-slim AS build
-WORKDIR /app
 
-# System deps + Node 18 + mysqlclient build deps
+# System deps (node, build tools, mysqlclient deps)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates git \
     build-essential pkg-config \
     default-libmysqlclient-dev \
-  && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
-  && apt-get install -y --no-install-recommends nodejs \
-  && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy repo
+# Install Node.js 18 (good for Next.js)
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get update && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
 COPY . .
 
-# ---------- Frontend deps (NO build here) ----------
+# ---- Build NextJS ----
 WORKDIR /app/next
 RUN npm ci
+RUN npm run build
 
-# ---------- Backend deps ----------
+# ---- Build Python backend venv ----
 WORKDIR /app/platform
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --upgrade pip
-
-# Install backend requirements (requirements.txt or pyproject.toml)
 RUN if [ -f requirements.txt ]; then pip install -r requirements.txt; \
     elif [ -f pyproject.toml ]; then pip install .; \
     else echo "No requirements.txt or pyproject.toml in /platform" && exit 1; fi
 
 
 # =========================
-# Runtime stage
+# RUNTIME STAGE
 # =========================
-FROM python:3.11-slim
-WORKDIR /app
+FROM python:3.11-slim AS runtime
 
-# Runtime deps + Node 18 + supervisor
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates supervisor \
-  && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
-  && apt-get install -y --no-install-recommends nodejs \
-  && rm -rf /var/lib/apt/lists/*
+    supervisor \
+    default-libmysqlclient-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy app + venv from build stage
+WORKDIR /app
 COPY --from=build /app /app
 COPY --from=build /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
 
-# Supervisor config
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    NODE_ENV=production
+
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-EXPOSE 3000
-CMD ["/usr/bin/supervisord","-n"]
+CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/supervisord.conf"]
