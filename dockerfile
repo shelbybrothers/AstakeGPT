@@ -8,7 +8,6 @@ COPY . .
 # Build frontend
 WORKDIR /app/next
 RUN npm ci
-RUN npm run build
 
 # Install backend deps
 WORKDIR /app/platform
