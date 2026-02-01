@@ -1,4 +1,4 @@
-FROM node:20-bullseye AS build
+FROM node:18-bullseye AS build
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y python3 python3-pip python3-venv && rm -rf /var/lib/apt/lists/*
@@ -19,7 +19,7 @@ RUN if [ -f requirements.txt ]; then pip install -r requirements.txt; \
     elif [ -f pyproject.toml ]; then pip install .; \
     else echo "No requirements.txt or pyproject.toml in /platform" && exit 1; fi
 
-FROM node:20-bullseye
+FROM node:18-bullseye
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y python3 supervisor && rm -rf /var/lib/apt/lists/*
