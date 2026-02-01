@@ -3,9 +3,8 @@
 # =========================
 FROM python:3.11-slim AS build
 
-# System deps (node, build tools, mysqlclient deps)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates git \
+    curl ca-certificates \
     build-essential pkg-config \
     default-libmysqlclient-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -21,8 +20,11 @@ COPY . .
 # ---- Build NextJS ----
 WORKDIR /app/next
 
-# Provide BUILD-TIME placeholders (only to satisfy env validation during build)
-# These do NOT replace runtime env vars on Render.
+# Disable Husky/git hooks during Docker build
+ENV CI=true \
+    HUSKY=0
+
+# Provide BUILD-TIME placeholders so env validation passes
 ARG DATABASE_URL="postgresql://user:pass@localhost:5432/db?schema=public"
 ARG NEXTAUTH_SECRET="build-time-placeholder-secret"
 ARG NEXTAUTH_URL="http://localhost:3000"
