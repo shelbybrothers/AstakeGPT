@@ -6,12 +6,12 @@
     "node": ">=18.0.0 <19.0.0"
   },
   "scripts": {
-    "build": "next build --no-lint",
+    "build": "cross-env SKIP_ENV_VALIDATION=1 next build --no-lint",
     "dev": "next dev",
     "postinstall": "prisma generate",
     "lint": "cross-env SKIP_ENV_VALIDATION=1 next lint --fix",
     "start": "next start",
-    "prepare": "cd .. && husky install next/.husky",
+    "prepare": "node -e \"process.exit(process.env.CI || process.env.HUSKY === '0' ? 0 : 1)\" || (cd .. && husky install next/.husky)",
     "test": "cross-env SKIP_ENV_VALIDATION=1 jest"
   },
   "dependencies": {
