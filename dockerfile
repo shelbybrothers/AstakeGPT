@@ -1,72 +1,47 @@
-# =========================
-# BUILD STAGE
-# =========================
-FROM python:3.11-slim AS build
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates \
-    build-essential pkg-config \
-    default-libmysqlclient-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Node.js 18
-RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
-    && apt-get update && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
+FROM node:18-bullseye AS build
 WORKDIR /app
+
+ENV CI=true \
+    HUSKY=0 \
+    SKIP_ENV_VALIDATION=1 \
+    DATABASE_URL="postgresql://user:pass@127.0.0.1:5432/db?schema=public" \
+    NEXTAUTH_SECRET="build-time-dummy-secret"
+
 COPY . .
 
-# ---- Build NextJS ----
 WORKDIR /app/next
-
-# Build-time placeholders so env validation passes during next build
-ARG DATABASE_URL="postgresql://user:pass@localhost:5432/db?schema=public"
-ARG NEXTAUTH_SECRET="build-time-placeholder-secret"
-ARG NEXTAUTH_URL="http://localhost:3000"
-
-ENV NODE_ENV=production \
-    CI=true \
-    DATABASE_URL=$DATABASE_URL \
-    NEXTAUTH_SECRET=$NEXTAUTH_SECRET \
-    NEXTAUTH_URL=$NEXTAUTH_URL
-
-# IMPORTANT:
-# - ignore-scripts prevents Husky prepare hook from running
-# - then we run prisma generate manually
-RUN npm ci --ignore-scripts
+RUN npm ci --no-audit --no-fund
 RUN npx prisma generate
 RUN npm run build
 
-# ---- Build Python backend venv ----
-WORKDIR /app/platform
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-RUN pip install --upgrade pip
 
-RUN if [ -f requirements.txt ]; then pip install -r requirements.txt; \
-    elif [ -f pyproject.toml ]; then pip install .; \
-    else echo "No requirements.txt or pyproject.toml in /platform" && exit 1; fi
-
-
-# =========================
-# RUNTIME STAGE
-# =========================
-FROM python:3.11-slim AS runtime
+FROM node:18-bullseye AS runtime
+WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    supervisor \
-    default-libmysqlclient-dev \
-    && rm -rf /var/lib/apt/lists/*
+    python3 python3-venv python3-pip supervisor \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV NODE_ENV=production \
+    PYTHONUNBUFFERED=1 \
+    HUSKY=0
+
+COPY . /app
+COPY --from=build /app/next/.next /app/next/.next
+COPY --from=build /app/next/node_modules /app/next/node_modules
+COPY --from=build /app/next/package.json /app/next/package.json
+COPY --from=build /app/next/next.config.mjs /app/next/next.config.mjs
+COPY --from=build /app/next/prisma /app/next/prisma
+
+WORKDIR /app/backend
+RUN python3 -m venv /opt/venv \
+ && /opt/venv/bin/pip install --upgrade pip \
+ && /opt/venv/bin/pip install -r requirements.txt
+
+ENV PATH="/opt/venv/bin:${PATH}"
 
 WORKDIR /app
-COPY --from=build /app /app
-COPY --from=build /opt/venv /opt/venv
-
-ENV PATH="/opt/venv/bin:$PATH" \
-    PYTHONUNBUFFERED=1 \
-    NODE_ENV=production
-
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
+EXPOSE 3000
 CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/supervisord.conf"]
